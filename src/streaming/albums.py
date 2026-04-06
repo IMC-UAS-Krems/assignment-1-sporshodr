@@ -17,11 +17,18 @@ class Album:
         self.release_year = release_year
         self.tracks = []
 
-    def add_track(self, track:Track):
+    def add_track(self, track):
         self.tracks.append(track)
+        track.album = self
+        self.tracks.sort(key=lambda t: t.track_number)
 
     def track_ids(self):
-        return [track.track_id for track in self.tracks ]
+        ids = set()
+
+        for track in self.tracks:
+            ids.add(track.track_id)
+
+        return ids
 
     def duration_seconds(self) -> int:
         return sum(track.duration_seconds for track in self.tracks)

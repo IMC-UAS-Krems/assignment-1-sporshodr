@@ -11,9 +11,9 @@ from _pytest.main import Session
 from datetime import datetime, timedelta
 from streaming.albums import Album
 from streaming.artists import Artist
-from streaming.playlists import Playlist
-from streaming.tracks import Track
-from streaming.users import User
+from streaming.playlists import Playlist, CollaborativePlaylist
+from streaming.tracks import Track, Song
+from streaming.users import User, PremiumUser, FamilyMember
 
 
 class StreamingPlatform:
@@ -63,7 +63,7 @@ class StreamingPlatform:
         return list(self._catalogue.values())
 
     #Query 1
-    def total_listening_time_minutes(start: datetime, end: datetime) -> float:
+    def total_listening_time_minutes(self,start: datetime, end: datetime) -> float:
         total_seconds = 0
         for session in self._sessions:
             if start <= session.timestamp <= end:
@@ -71,160 +71,204 @@ class StreamingPlatform:
         return total_seconds / 60
 
     #Query 2
-    def avg_unique_tracks_per_premium_user(days: int = 30) -> float:
-        premium_users = [
-            user for user in self._users.values()
-            if type(user) is PremiumUser
-        ]
-
-        if not premium_users:
-            return 0.0
-
+    def avg_unique_tracks_per_premium_user(self, days: int = 30) -> float:
         cutoff = datetime.now() - timedelta(days=days)
-        total_unique = 0
+
+        premium_users = []
+        for user in self._users.values():
+            if isinstance(user, PremiumUser):
+                premium_users.append(user)
+
+        if len(premium_users) == 0:
+            return 0
+
+        total = 0
 
         for user in premium_users:
-            unique_track_ids = {
-                session.track.track_id
-                for session in self._sessions
-                if session.user == user and session.timestamp >= cutoff
-            }
-            total_unique += len(unique_track_ids)
+            unique_tracks = []
 
-        return total_unique / len(premium_users)
+            for session in self._sessions:
+                if session.user == user and session.timestamp >= cutoff:
+                    if session.track.track_id not in unique_tracks:
+                        unique_tracks.append(session.track.track_id)
+
+            total += len(unique_tracks)
+
+        return total / len(premium_users)
 
     #Query 3
-    def track_with_most_distinct_listeners() -> Track | None:
-        if not self._sessions:
+    def track_with_most_distinct_listeners(self) -> Track | None:
+        if len(self._sessions) == 0:
             return None
 
-        listeners_by_track = {}
+        track_listeners = {}
 
         for session in self._sessions:
             track = session.track
             user_id = session.user.user_id
 
-            if track not in listeners_by_track:
-                listeners_by_track[track] = set()
+            if track not in track_listeners:
+                track_listeners[track] = []
 
-            listeners_by_track[track].add(user_id)
+            if user_id not in track_listeners[track]:
+                track_listeners[track].append(user_id)
 
-        return max(listeners_by_track, key=lambda track: len(listeners_by_track[track]))
+        best_track = None
+        max_count = 0
 
+        for track in track_listeners:
+            count = len(track_listeners[track])
+            if count > max_count:
+                max_count = count
+                best_track = track
+
+        return best_track
     #Query 4
-    def avg_session_duration_by_user_type() -> list[tuple[str, float]]:
-        grouped = {}
+    def avg_session_duration_by_user_type(self) -> list[tuple[str, float]]:
+        data = {}
 
         for session in self._sessions:
-            type_name = type(session.user).__name__
+            user_type = type(session.user).__name__
 
-            if type_name not in grouped:
-                grouped[type_name] = []
+            if user_type not in data:
+                data[user_type] = []
 
-            grouped[type_name].append(session.duration_listened_seconds)
+            data[user_type].append(session.duration_listened_seconds)
 
         result = []
-        for type_name, durations in grouped.items():
-            average = sum(durations) / len(durations)
-            result.append((type_name, float(average)))
 
-        result.sort(key=lambda item: item[1], reverse=True)
+        for user_type in data:
+            durations = data[user_type]
+            avg = sum(durations) / len(durations)
+            result.append((user_type, float(avg)))
+
+        # sort manually (descending)
+        for i in range(len(result)):
+            for j in range(i + 1, len(result)):
+                if result[j][1] > result[i][1]:
+                    result[i], result[j] = result[j], result[i]
+
         return result
 
     #Query 5
-    def total_listening_time_underage_sub_users_minutes(age_threshold: int = 18) -> float:
-        total_seconds = 0
+    def total_listening_time_underage_sub_users_minutes(self,age_threshold: int = 18) -> float:
+        total = 0
 
         for session in self._sessions:
             user = session.user
-            if isinstance(user, FamilyMember) and user.age < age_threshold:
-                total_seconds += session.duration_listened_seconds
 
-        return total_seconds / 60
+            if isinstance(user, FamilyMember) and user.age < age_threshold:
+                total += session.duration_listened_seconds
+
+        return total / 60
 
     #Query 6
-    def top_artists_by_listening_time(n: int = 5) -> list[tuple[Artist, float]]:
-        artist_totals = {}
+    def top_artists_by_listening_time(self,n: int = 5) -> list[tuple[Artist, float]]:
+        artist_time = {}
 
         for session in self._sessions:
             track = session.track
 
             if isinstance(track, Song):
                 artist = track.artist
-                if artist not in artist_totals:
-                    artist_totals[artist] = 0
-                artist_totals[artist] += session.duration_listened_seconds
 
-        ranked = sorted(
-            [(artist, total_seconds / 60) for artist, total_seconds in artist_totals.items()],
-            key=lambda item: item[1],
-            reverse=True
-        )
+                if artist not in artist_time:
+                    artist_time[artist] = 0
 
-        return ranked[:n]
+                artist_time[artist] += session.duration_listened_seconds
+
+        result = []
+
+        for artist in artist_time:
+            minutes = artist_time[artist] / 60
+            result.append((artist, minutes))
+
+        # manual sort descending
+        for i in range(len(result)):
+            for j in range(i + 1, len(result)):
+                if result[j][1] > result[i][1]:
+                    result[i], result[j] = result[j], result[i]
+
+        return result[:n]
 
     #Query 7
-    def user_top_genre(user_id: str) -> tuple[str, float] | None:
+    def user_top_genre(self, user_id: str) -> tuple[str, float] | None:
         user = self.get_user(user_id)
+
         if user is None:
             return None
 
-        user_sessions = [session for session in self._sessions if session.user.user_id == user_id]
-        if not user_sessions:
+        genre_time = {}
+        total = 0
+
+        for session in self._sessions:
+            if session.user.user_id == user_id:
+                genre = session.track.genre
+
+                if genre not in genre_time:
+                    genre_time[genre] = 0
+
+                genre_time[genre] += session.duration_listened_seconds
+                total += session.duration_listened_seconds
+
+        if total == 0:
             return None
 
-        genre_totals = {}
-        total_seconds = 0
+        best_genre = None
+        max_time = 0
 
-        for session in user_sessions:
-            genre = session.track.genre
-            if genre not in genre_totals:
-                genre_totals[genre] = 0
+        for genre in genre_time:
+            if genre_time[genre] > max_time:
+                max_time = genre_time[genre]
+                best_genre = genre
 
-            genre_totals[genre] += session.duration_listened_seconds
-            total_seconds += session.duration_listened_seconds
+        percentage = (max_time / total) * 100
 
-        top_genre = max(genre_totals, key=genre_totals.get)
-        percentage = (genre_totals[top_genre] / total_seconds) * 100
-
-        return (top_genre, percentage)
+        return (best_genre, percentage)
 
     #Query 8
-    def collaborative_playlists_with_many_artists(threshold: int = 3) -> list[CollaborativePlaylist]:
+    def collaborative_playlists_with_many_artists(self,threshold: int = 3) -> list[CollaborativePlaylist]:
         result = []
 
         for playlist in self._playlists.values():
             if isinstance(playlist, CollaborativePlaylist):
-                distinct_artists = {
-                    track.artist
-                    for track in playlist.tracks
-                    if isinstance(track, Song)
-                }
+                artists = []
 
-                if len(distinct_artists) > threshold:
+                for track in playlist.tracks:
+                    if isinstance(track, Song):
+                        if track.artist not in artists:
+                            artists.append(track.artist)
+
+                if len(artists) > threshold:
                     result.append(playlist)
 
         return result
-
     #Query 9
-    def avg_tracks_per_playlist_type() -> dict[str, float]:
-        playlist_counts = []
-        collaborative_counts = []
+    def avg_tracks_per_playlist_type(self) -> dict[str, float]:
+        normal = []
+        collaborative = []
 
         for playlist in self._playlists.values():
             if type(playlist) is Playlist:
-                playlist_counts.append(len(playlist.tracks))
+                normal.append(len(playlist.tracks))
             elif isinstance(playlist, CollaborativePlaylist):
-                collaborative_counts.append(len(playlist.tracks))
+                collaborative.append(len(playlist.tracks))
 
-        return {
-            "Playlist": sum(playlist_counts) / len(playlist_counts) if playlist_counts else 0,
-            "CollaborativePlaylist": sum(collaborative_counts) / len(
-                collaborative_counts) if collaborative_counts else 0,
-        }
+        result = {}
 
+        if normal:
+            result["Playlist"] = sum(normal) / len(normal)
+        else:
+            result["Playlist"] = 0.0
+
+        if collaborative:
+            result["CollaborativePlaylist"] = sum(collaborative) / len(collaborative)
+        else:
+            result["CollaborativePlaylist"] = 0.0
+
+        return result
     #Query 10
-    def users_who_completed_albums() -> list[tuple[User, list[str]]]:
+    def users_who_completed_albums(self) -> list[tuple[User, list[str]]]:
         result = []
 
         for user in self._users.values():

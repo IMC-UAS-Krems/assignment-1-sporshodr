@@ -15,3 +15,6 @@ class Artist:
 
     def add_track(self, track):
         self.tracks.append(track)
+
+    def track_count(self) -> int:
+        return len(self.tracks)

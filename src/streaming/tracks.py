@@ -27,7 +27,7 @@ class Song(Track):
     def __init__(self, track_id: str, title: str, duration_seconds: int, genre: str, artist):
         super().__init__(track_id, title, duration_seconds, genre)
         self.artist = artist
-
+1
 class Podcast(Track):
     def __init__(self, host: str, description: str):
         super().__init__(track_id, title, duration_seconds, genre)
