@@ -64,6 +64,7 @@ class StreamingPlatform:
 
     #Query 1
     def total_listening_time_minutes(self,start: datetime, end: datetime) -> float:
+        """ Return the total cumulative listening time (in minutes)"""
         total_seconds = 0
         for session in self._sessions:
             if start <= session.timestamp <= end:
@@ -72,6 +73,8 @@ class StreamingPlatform:
 
     #Query 2
     def avg_unique_tracks_per_premium_user(self, days: int = 30) -> float:
+        '''Compute the average number of unique tracks listened to per PremiumUser in the last days
+        Only count distinct tracks for sessions within the time window'''
         cutoff = datetime.now() - timedelta(days=days)
 
         premium_users = []
@@ -98,6 +101,7 @@ class StreamingPlatform:
 
     #Query 3
     def track_with_most_distinct_listeners(self) -> Track | None:
+        '''Return the track with the highest number of distinct listeners'''
         if len(self._sessions) == 0:
             return None
 
@@ -125,6 +129,7 @@ class StreamingPlatform:
         return best_track
     #Query 4
     def avg_session_duration_by_user_type(self) -> list[tuple[str, float]]:
+        '''ompute the average session duration (in seconds) and return them ranked from longest to shortest'''
         data = {}
 
         for session in self._sessions:
@@ -152,6 +157,7 @@ class StreamingPlatform:
 
     #Query 5
     def total_listening_time_underage_sub_users_minutes(self,age_threshold: int = 18) -> float:
+        '''Return the total listening time (in minutes) that is under the specified age threshold '''
         total = 0
 
         for session in self._sessions:
@@ -164,6 +170,7 @@ class StreamingPlatform:
 
     #Query 6
     def top_artists_by_listening_time(self,n: int = 5) -> list[tuple[Artist, float]]:
+        '''Identify the top n artists (default 5) ranked by total cumulative listening time across all their tracks'''
         artist_time = {}
 
         for session in self._sessions:
@@ -193,6 +200,8 @@ class StreamingPlatform:
 
     #Query 7
     def user_top_genre(self, user_id: str) -> tuple[str, float] | None:
+        '''Given a user ID, return their most frequently listened-to genre
+        and the percentage of their total listening time it accounts for'''
         user = self.get_user(user_id)
 
         if user is None:
@@ -228,6 +237,7 @@ class StreamingPlatform:
 
     #Query 8
     def collaborative_playlists_with_many_artists(self,threshold: int = 3) -> list[CollaborativePlaylist]:
+        '''Return all CollaborativePlaylist instances that contain tracks from more than threshold'''
         result = []
 
         for playlist in self._playlists.values():
@@ -245,6 +255,8 @@ class StreamingPlatform:
         return result
     #Query 9
     def avg_tracks_per_playlist_type(self) -> dict[str, float]:
+        '''Compute the average number of tracks per playlist,
+        distinguishing between standard Playlist and CollaborativePlaylist instances'''
         normal = []
         collaborative = []
 
@@ -269,6 +281,8 @@ class StreamingPlatform:
         return result
     #Query 10
     def users_who_completed_albums(self) -> list[tuple[User, list[str]]]:
+        '''dentify users who have listened to every track on at least one complete Album
+        and return the corresponding album titles'''
         result = []
 
         for user in self._users.values():
